@@ -200,14 +200,54 @@ export class GradioClient implements INodeType {
 				description: 'Full URL of the Gradio Space',
 			},
 			{
+				displayName: 'API Selection',
+				name: 'apiSelection',
+				type: 'options',
+				options: [
+					{
+						name: 'Auto-detect from Space',
+						value: 'autoDetect',
+					},
+					{
+						name: 'Manual Entry',
+						value: 'manual',
+					},
+				],
+				default: 'autoDetect',
+				displayOptions: {
+					show: {
+						operation: ['callFunction'],
+					},
+				},
+				description: 'Choose how to select the API endpoint',
+			},
+			{
 				displayName: 'API Name',
 				name: 'apiName',
+				type: 'options',
+				typeOptions: {
+					loadOptionsMethod: 'getApiFunctions',
+				},
+				default: '/predict',
+				required: true,
+				displayOptions: {
+					show: {
+						operation: ['callFunction'],
+						apiSelection: ['autoDetect'],
+					},
+				},
+				description: 'The function endpoint to call (automatically loaded from Space)',
+			},
+			{
+				displayName: 'API Name (Manual)',
+				name: 'apiNameManual',
 				type: 'string',
 				default: '/predict',
 				required: true,
 				displayOptions: {
 					show: {
 						operation: ['callFunction'],
+						apiSelection: ['manual'],
 					},
 				},
 				placeholder: '/predict',
@@ -319,6 +359,122 @@ export class GradioClient implements INodeType {
 		],
 	};
 
+	methods = {
+		loadOptions: {
+			async getApiFunctions(this: IExecuteFunctions): Promise<Array<{name: string, value: string}>> {
+				const spaceUrl = this.getCurrentNodeParameter('spaceUrl') as string;
+				const authentication = this.getCurrentNodeParameter('authentication') as string;
+				const requiresAuth = authentication === 'huggingface';
+				
+				if (!spaceUrl) {
+					return [{ name: '/predict (default)', value: '/predict' }];
+				}
+				
+				const cleanedUrl = cleanUrl(spaceUrl);
+				const headers: IDataObject = {
+					'Content-Type': 'application/json',
+				};
+				
+				if (requiresAuth) {
+					try {
+						const credentials = await this.getCredentials('huggingFaceApi');
+						if (credentials && credentials.apiKey) {
+							headers['Authorization'] = `Bearer ${credentials.apiKey}`;
+						}
+					} catch (error) {
+						// Continue without auth if credentials are not available
+					}
+				}
+				
+				try {
+					// Try OpenAPI endpoint first (more standardized)
+					try {
+						const openApiResponse = await this.helpers.httpRequest({
+							method: 'GET',
+							url: `${cleanedUrl}/gradio_api/openapi.json`,
+							headers,
+							returnFullResponse: true,
+							ignoreHttpStatusErrors: true,
+						});
+						
+						if (openApiResponse.statusCode === 200 && openApiResponse.body) {
+							const openApiSpec = openApiResponse.body;
+							const paths = openApiSpec.paths || {};
+							const options = [];
+							
+							for (const path in paths) {
+								if (path.startsWith('/gradio_api/call/')) {
+									const endpoint = path.replace('/gradio_api/call', '');
+									const pathInfo = paths[path].post || {};
+									const summary = pathInfo.summary || endpoint;
+									options.push({
+										name: `${endpoint} - ${summary}`,
+										value: endpoint,
+									});
+								}
+							}
+							
+							if (options.length > 0) {
+								return options;
+							}
+						}
+					} catch (openApiError) {
+						// Continue to config endpoint fallback
+					}
+					
+					// Fallback to config endpoint
+					const configResponse = await this.helpers.httpRequest({
+						method: 'GET',
+						url: `${cleanedUrl}/gradio_api/config`,
+						headers,
+						returnFullResponse: true,
+						ignoreHttpStatusErrors: true,
+					});
+					
+					if (configResponse.statusCode === 200 && configResponse.body) {
+						const config = configResponse.body;
+						const options = [];
+						
+						// Extract named endpoints
+						if (config.named_endpoints) {
+							for (const endpoint in config.named_endpoints) {
+								options.push({
+									name: `${endpoint} (named)`,
+									value: endpoint,
+								});
+							}
+						}
+						
+						// Extract unnamed endpoints
+						if (config.unnamed_endpoints && Array.isArray(config.unnamed_endpoints)) {
+							config.unnamed_endpoints.forEach((endpoint: any, index: number) => {
+								const endpointName = `/api/predict_${index}`;
+								options.push({
+									name: `${endpointName} (unnamed #${index})`,
+									value: endpointName,
+								});
+							});
+						}
+						
+						if (options.length > 0) {
+							return options;
+						}
+					}
+				} catch (error) {
+					// If all fails, return default options with manual entry hint
+				}
+				
+				// Default fallback with manual entry hint
+				return [
+					{ name: '/predict (default)', value: '/predict' },
+					{ name: '/generate (common)', value: '/generate' },
+					{ name: '/transcribe (common)', value: '/transcribe' },
+					{ name: '⚠️ Auto-detection failed - use Manual Entry', value: '/predict' },
+				];
+			},
+		},
+	};
+
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
 		const items = this.getInputData();
 		const returnData: INodeExecutionData[] = [];
@@ -401,7 +557,10 @@ export class GradioClient implements INodeType {
 						});
 					}
 				} else if (operation === 'callFunction') {
-					const apiName = this.getNodeParameter('apiName', i) as string;
+					const apiSelection = this.getNodeParameter('apiSelection', i) as string;
+					const apiName = apiSelection === 'manual' 
+						? this.getNodeParameter('apiNameManual', i) as string
+						: this.getNodeParameter('apiName', i) as string;
 					const inputParametersRaw = this.getNodeParameter('inputParameters', i) as string;
 					const advancedOptions = this.getNodeParameter('advancedOptions', i) as IDataObject;
 					const fileOptions = this.getNodeParameter('fileOptions', i) as IDataObject;
