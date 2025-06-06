@@ -701,8 +701,8 @@ export class GradioClient implements INodeType {
 						);
 					}
 
-					// Step 2: Wait a bit for processing to start
-					await sleep(5000); // Wait 5 seconds before polling
+					// Step 2: Start polling immediately 
+					await sleep(100); // Minimal wait before polling
 
 					// Step 3: Poll for results
 					const resultData = await pollForResults(
