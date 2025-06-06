@@ -167,12 +167,25 @@ export class GradioClient implements INodeType {
 				default: 'callFunction',
 			},
 			{
-				displayName: 'Requires Authentication',
+				displayName: 'Authentication',
 				name: 'requiresAuth',
-				type: 'boolean',
-				noDataExpression: true,
+				type: 'options',
+				options: [
+					{
+						name: 'None',
+						value: false,
+						description: 'Public space - no authentication needed',
+					},
+					{
+						name: 'HuggingFace API',
+						value: true,
+						description: 'Private space - requires HuggingFace authentication',
+					},
+				],
 				default: false,
-				description: 'Whether the space requires HuggingFace authentication',
+				required: true,
+				noDataExpression: true,
+				description: 'Choose whether the space requires authentication',
 			},
 			{
 				displayName: 'Space URL',
