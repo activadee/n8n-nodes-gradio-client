@@ -80,12 +80,13 @@ async function pollForResults(
 	
 	while ((Date.now() - startTime) < timeout * 1000) {
 		try {
-			console.log('Polling GET request to:', `${url}/${eventId}`);
+			const pollUrl = url.replace(/\/gradio_api\/call\/.*/, `/gradio_api/call/${eventId}`);
+			console.log('Polling GET request to:', pollUrl);
 			console.log('Polling headers:', JSON.stringify(headers));
 			
 			const response = await executeFunctions.helpers.httpRequest({
 				method: 'GET',
-				url: `${url}/${eventId}`,
+				url: pollUrl,
 				headers,
 				returnFullResponse: true,
 			});
@@ -605,8 +606,20 @@ export class GradioClient implements INodeType {
 							// Direct array format: [123, "www"]
 							inputParameters = parsedData;
 						} else if (typeof parsedData === 'object' && parsedData !== null) {
-							// Object format: {"p1": 123, "p2": "www"} -> [{"p1": 123, "p2": "www"}]
-							inputParameters = [parsedData];
+							// Object format for Gradio: {"text": "...", "voice_file": null, ...}
+							// Convert to array format that Gradio expects
+							if ('text' in parsedData || 'voice_file' in parsedData) {
+								// Gradio TTS format - convert to parameter array
+								inputParameters = [
+									parsedData.text || '',
+									parsedData.voice_file || null,
+									parsedData.exaggeration !== undefined ? parsedData.exaggeration : 0.5,
+									parsedData.cfg_weight !== undefined ? parsedData.cfg_weight : 0.5
+								];
+							} else {
+								// Generic object format: {"p1": 123, "p2": "www"} -> [{"p1": 123, "p2": "www"}]
+								inputParameters = [parsedData];
+							}
 						} else {
 							throw new Error('Input parameters must be a JSON array or object');
 						}
