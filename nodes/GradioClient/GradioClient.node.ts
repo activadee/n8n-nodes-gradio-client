@@ -354,21 +354,42 @@ export class GradioClient implements INodeType {
 				if (operation === 'getSpaceInfo') {
 					try {
 						// Try to get config endpoint
+						const configUrl = `${cleanedUrl}/gradio_api/config`;
+						console.log('Getting space info from:', configUrl);
+						console.log('Config request headers:', JSON.stringify(headers));
+						
 						const configResponse = await this.helpers.httpRequest({
 							method: 'GET',
-							url: `${cleanedUrl}/gradio_api/config`,
+							url: configUrl,
 							headers,
 							returnFullResponse: true,
+							ignoreHttpStatusErrors: true,
 						});
+						
+						console.log('Config response status:', configResponse.statusCode);
+						if (configResponse.statusCode === 401) {
+							console.log('401 Unauthorized - Response body:', configResponse.body);
+						}
 
-						returnData.push({
-							json: {
-								spaceUrl: cleanedUrl,
-								config: configResponse.body,
-								available: true,
-							},
-							pairedItem: { item: i },
-						});
+						if (configResponse.statusCode === 200) {
+							returnData.push({
+								json: {
+									spaceUrl: cleanedUrl,
+									config: configResponse.body,
+									available: true,
+								},
+								pairedItem: { item: i },
+							});
+						} else {
+							returnData.push({
+								json: {
+									spaceUrl: cleanedUrl,
+									available: false,
+									error: `HTTP ${configResponse.statusCode}: ${configResponse.body}`,
+								},
+								pairedItem: { item: i },
+							});
+						}
 					} catch (error) {
 						returnData.push({
 							json: {
