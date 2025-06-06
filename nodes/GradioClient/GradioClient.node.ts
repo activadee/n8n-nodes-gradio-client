@@ -51,24 +51,172 @@ function cleanUrl(url: string): string {
 	return url.replace(/\/$/, '');
 }
 
-async function convertToGradioFile(
+// Enhanced file handling following Gradio patterns
+async function handleGradioFile(
 	executeFunctions: IExecuteFunctions,
 	propertyName: string,
 	filename: string,
 ): Promise<GradioFileData> {
 	const buffer = await executeFunctions.helpers.getBinaryDataBuffer(0, propertyName);
+	const binaryData = executeFunctions.getInputData()[0].binary![propertyName];
 	
 	return {
 		path: filename,
 		meta: { _type: 'gradio.FileData' },
 		orig_name: filename,
 		size: buffer.length,
-		mime_type: 'application/octet-stream',
+		mime_type: binaryData.mimeType || 'application/octet-stream',
 	};
+}
+
+// Legacy function for backward compatibility
+async function convertToGradioFile(
+	executeFunctions: IExecuteFunctions,
+	propertyName: string,
+	filename: string,
+): Promise<GradioFileData> {
+	return handleGradioFile(executeFunctions, propertyName, filename);
 }
 
 
 export class GradioClient implements INodeType {
+	
+	// Enhanced input parameter processing
+	static normalizeInputParameters(parsedData: any): any[] {
+		if (Array.isArray(parsedData)) {
+			// Direct array format: [123, "www"]
+			return parsedData;
+		} else if (typeof parsedData === 'object' && parsedData !== null) {
+			// Object format handling
+			if ('text' in parsedData || 'voice_file' in parsedData) {
+				// Gradio TTS/Chat format - convert to parameter array
+				return [
+					parsedData.text || '',
+					parsedData.voice_file || null,
+					parsedData.exaggeration !== undefined ? parsedData.exaggeration : 0.5,
+					parsedData.cfg_weight !== undefined ? parsedData.cfg_weight : 0.5
+				];
+			} else if ('prompt' in parsedData || 'message' in parsedData) {
+				// Chat/LLM format
+				return [
+					parsedData.prompt || parsedData.message || '',
+					parsedData.system_prompt || '',
+					parsedData.max_tokens || 1000,
+					parsedData.temperature || 0.7,
+					parsedData.top_p || 0.9
+				];
+			} else {
+				// Generic object format: {"p1": 123, "p2": "www"} -> [{"p1": 123, "p2": "www"}]
+				return [parsedData];
+			}
+		} else {
+			throw new Error('Input parameters must be a JSON array or object');
+		}
+	}
+
+	// Configuration validation and API discovery
+	static async validateApiEndpoint(
+		executeFunctions: IExecuteFunctions,
+		spaceUrl: string,
+		apiName: string,
+		headers: IDataObject
+	): Promise<{ isValid: boolean; error?: string }> {
+		try {
+			const cleanedUrl = cleanUrl(spaceUrl);
+			const configUrl = `${cleanedUrl}/gradio_api/config`;
+			
+			const configResponse = await executeFunctions.helpers.httpRequest({
+				method: 'GET',
+				url: configUrl,
+				headers,
+				returnFullResponse: true,
+				ignoreHttpStatusErrors: true,
+			});
+
+			if (configResponse.statusCode !== 200) {
+				return { 
+					isValid: false, 
+					error: `Unable to access space configuration (HTTP ${configResponse.statusCode})` 
+				};
+			}
+
+			const config = configResponse.body;
+			
+			// Check if endpoint exists in config
+			if (config.named_endpoints && config.named_endpoints[apiName]) {
+				return { isValid: true };
+			}
+			
+			// Check unnamed endpoints
+			if (config.unnamed_endpoints && Array.isArray(config.unnamed_endpoints)) {
+				const endpointIndex = parseInt(apiName.replace('/api/predict_', ''));
+				if (!isNaN(endpointIndex) && endpointIndex < config.unnamed_endpoints.length) {
+					return { isValid: true };
+				}
+			}
+			
+			return { 
+				isValid: false, 
+				error: `API endpoint '${apiName}' not found in space configuration` 
+			};
+		} catch (error) {
+			return { 
+				isValid: false, 
+				error: `Failed to validate API endpoint: ${error instanceof Error ? error.message : String(error)}` 
+			};
+		}
+	}
+
+	// Official Gradio Client methods implementation
+	static async predict(
+		executeFunctions: IExecuteFunctions,
+		spaceUrl: string,
+		apiName: string,
+		inputParameters: any[],
+		headers: IDataObject,
+		timeout: number = 120
+	): Promise<any> {
+		const cleanedUrl = cleanUrl(spaceUrl);
+		const apiUrl = `${cleanedUrl}/gradio_api/call${apiName}`;
+		
+		console.log('Gradio.predict() called:', { apiUrl, inputParameters });
+		
+		// Step 1: Submit request
+		const initialResponse = await executeFunctions.helpers.httpRequest({
+			method: 'POST',
+			url: apiUrl,
+			headers,
+			body: { data: inputParameters },
+			returnFullResponse: true,
+		});
+
+		if (initialResponse.statusCode !== 200) {
+			throw new Error(`Failed to submit prediction: ${initialResponse.statusMessage}`);
+		}
+
+		const apiResponse = initialResponse.body as GradioApiResponse;
+		const eventId = apiResponse.event_id;
+
+		if (!eventId) {
+			throw new Error('No event_id received from Gradio API');
+		}
+
+		// Step 2: Get result via streaming
+		const streamUrl = `${apiUrl}/${eventId}`;
+		const streamResponse = await executeFunctions.helpers.httpRequest({
+			method: 'GET',
+			url: streamUrl,
+			headers,
+			timeout: timeout * 1000,
+			returnFullResponse: true,
+		});
+
+		if (streamResponse.statusCode !== 200) {
+			throw new Error(`Failed to get prediction result: ${streamResponse.statusMessage}`);
+		}
+
+		return GradioClient.parseServerSentEvents(streamResponse.body);
+	}
 	
 	static parseServerSentEvents(responseBody: string): any {
 		const lines = responseBody.split('\n').filter((line: string) => line.trim());
@@ -605,32 +753,11 @@ export class GradioClient implements INodeType {
 					const advancedOptions = this.getNodeParameter('advancedOptions', i) as IDataObject;
 					const fileOptions = this.getNodeParameter('fileOptions', i) as IDataObject;
 					
-					// Parse input parameters - accept both array and object
+					// Enhanced input parameter handling with flexible formats
 					let inputParameters: any[];
 					try {
 						const parsedData = JSON.parse(inputParametersRaw);
-						
-						if (Array.isArray(parsedData)) {
-							// Direct array format: [123, "www"]
-							inputParameters = parsedData;
-						} else if (typeof parsedData === 'object' && parsedData !== null) {
-							// Object format for Gradio: {"text": "...", "voice_file": null, ...}
-							// Convert to array format that Gradio expects
-							if ('text' in parsedData || 'voice_file' in parsedData) {
-								// Gradio TTS format - convert to parameter array
-								inputParameters = [
-									parsedData.text || '',
-									parsedData.voice_file || null,
-									parsedData.exaggeration !== undefined ? parsedData.exaggeration : 0.5,
-									parsedData.cfg_weight !== undefined ? parsedData.cfg_weight : 0.5
-								];
-							} else {
-								// Generic object format: {"p1": 123, "p2": "www"} -> [{"p1": 123, "p2": "www"}]
-								inputParameters = [parsedData];
-							}
-						} else {
-							throw new Error('Input parameters must be a JSON array or object');
-						}
+						inputParameters = GradioClient.normalizeInputParameters(parsedData);
 					} catch (error) {
 						throw new NodeOperationError(
 							this.getNode(),
@@ -664,75 +791,24 @@ export class GradioClient implements INodeType {
 					// Configuration
 					const timeout = (advancedOptions.timeout as number) || 120;
 					const returnFullResponse = advancedOptions.returnFullResponse as boolean || false;
-
-					// Single streaming request approach
-					const apiUrl = `${cleanedUrl}/gradio_api/call${apiName}`;
 					const startTime = Date.now();
 
-					console.log('Making initial API request to:', apiUrl);
-					console.log('Headers:', JSON.stringify(headers));
-					console.log('Body:', JSON.stringify({
-						data: inputParameters,
-					}));
-
-					// Make request and get event_id (following official Gradio pattern)
-					const initialResponse = await this.helpers.httpRequest({
-						method: 'POST',
-						url: apiUrl,
-						headers,
-						body: {
-							data: inputParameters,
-
-						},
-						returnFullResponse: true,
-					});
-
-					if (initialResponse.statusCode !== 200) {
-						throw new NodeOperationError(
-							this.getNode(),
-							`Failed to call Gradio API: ${initialResponse.statusMessage}`,
+					// Use the new predict() method - cleaner and more reliable
+					let resultData: any;
+					try {
+						resultData = await GradioClient.predict(
+							this,
+							cleanedUrl,
+							apiName,
+							inputParameters,
+							headers,
+							timeout
 						);
-					}
-
-					const apiResponse = initialResponse.body as GradioApiResponse;
-					const eventId = apiResponse.event_id;
-
-					if (!eventId) {
-						throw new NodeOperationError(
-							this.getNode(),
-							'No event_id received from Gradio API',
-						);
-					}
-
-					// Stream results using server-sent events
-					const streamUrl = `${apiUrl}/${eventId}`;
-					console.log('Streaming results from:', streamUrl);
-					
-					const streamResponse = await this.helpers.httpRequest({
-						method: 'GET',
-						url: streamUrl,
-						headers,
-						timeout: timeout * 1000,
-						returnFullResponse: true,
-					});
-
-					if (streamResponse.statusCode !== 200) {
-						let errorMessage = `HTTP ${streamResponse.statusCode}: ${streamResponse.statusMessage}`;
-						
-						// Handle specific Gradio errors
-						if (streamResponse.statusCode === 404) {
-							errorMessage = 'Gradio API endpoint not found or session expired';
-						} else if (streamResponse.statusCode === 401) {
-							errorMessage = 'Authentication failed - check your HuggingFace token';
-						} else if (streamResponse.statusCode === 429) {
-							errorMessage = 'Rate limit exceeded - consider duplicating the space';
-						}
-						
+					} catch (error) {
+						// Convert generic errors to NodeOperationError
+						const errorMessage = error instanceof Error ? error.message : String(error);
 						throw new NodeOperationError(this.getNode(), errorMessage);
 					}
-
-					// Parse the server-sent events response
-					const resultData = GradioClient.parseServerSentEvents(streamResponse.body);
 
 					const duration = Date.now() - startTime;
 
@@ -741,8 +817,9 @@ export class GradioClient implements INodeType {
 							json: {
 								data: resultData,
 								success: true,
-								eventId,
 								duration,
+								apiName,
+								spaceUrl: cleanedUrl,
 							},
 							pairedItem: { item: i },
 						});
