@@ -1,6 +1,6 @@
 {
   "name": "n8n-nodes-gradio-client",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "n8n node for connecting to Gradio Spaces",
   "keywords": [
     "n8n-community-node-package",
@@ -29,7 +29,9 @@
   ],
   "n8n": {
     "n8nNodesApiVersion": 1,
-    "credentials": [],
+    "credentials": [
+      "dist/credentials/HuggingFaceApi.credentials.js"
+    ],
     "nodes": [
       "dist/nodes/GradioClient/GradioClient.node.js"
     ]
