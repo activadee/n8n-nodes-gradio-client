@@ -1,8 +1,10 @@
 import {
 	IExecuteFunctions,
+	ILoadOptionsFunctions,
 	INodeExecutionData,
 	INodeType,
 	INodeTypeDescription,
+	INodePropertyOptions,
 	NodeOperationError,
 	IDataObject,
 	NodeConnectionType,
@@ -361,32 +363,32 @@ export class GradioClient implements INodeType {
 
 	methods = {
 		loadOptions: {
-			async getApiFunctions(this: IExecuteFunctions): Promise<Array<{name: string, value: string}>> {
-				const spaceUrl = this.getCurrentNodeParameter('spaceUrl') as string;
-				const authentication = this.getCurrentNodeParameter('authentication') as string;
-				const requiresAuth = authentication === 'huggingface';
-				
-				if (!spaceUrl) {
-					return [{ name: '/predict (default)', value: '/predict' }];
-				}
-				
-				const cleanedUrl = cleanUrl(spaceUrl);
-				const headers: IDataObject = {
-					'Content-Type': 'application/json',
-				};
-				
-				if (requiresAuth) {
-					try {
-						const credentials = await this.getCredentials('huggingFaceApi');
-						if (credentials && credentials.apiKey) {
-							headers['Authorization'] = `Bearer ${credentials.apiKey}`;
-						}
-					} catch (error) {
-						// Continue without auth if credentials are not available
-					}
-				}
-				
+			async getApiFunctions(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
 				try {
+					const spaceUrl = this.getNodeParameter('spaceUrl') as string;
+					const authentication = this.getNodeParameter('authentication') as string;
+					const requiresAuth = authentication === 'huggingface';
+					
+					if (!spaceUrl) {
+						return [{ name: '/predict (default)', value: '/predict' }];
+					}
+					
+					const cleanedUrl = cleanUrl(spaceUrl);
+					const headers: IDataObject = {
+						'Content-Type': 'application/json',
+					};
+					
+					if (requiresAuth) {
+						try {
+							const credentials = await this.getCredentials('huggingFaceApi');
+							if (credentials && credentials.apiKey) {
+								headers['Authorization'] = `Bearer ${credentials.apiKey}`;
+							}
+						} catch (error) {
+							// Continue without auth if credentials are not available
+						}
+					}
+					
 					// Try OpenAPI endpoint first (more standardized)
 					try {
 						const openApiResponse = await this.helpers.httpRequest({
@@ -461,10 +463,10 @@ export class GradioClient implements INodeType {
 						}
 					}
 				} catch (error) {
-					// If all fails, return default options with manual entry hint
+					// If all fails, return default options
 				}
 				
-				// Default fallback with manual entry hint
+				// Default fallback
 				return [
 					{ name: '/predict (default)', value: '/predict' },
 					{ name: '/generate (common)', value: '/generate' },
