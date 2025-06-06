@@ -100,19 +100,32 @@ async function pollForResults(
 					// Check for data lines
 					if (line.startsWith('data: ')) {
 						try {
-							const data = JSON.parse(line.slice(6)) as GradioEventData;
+							const dataContent = line.slice(6).trim();
 							
-							if (data.error) {
+							// Skip null data (heartbeat)
+							if (dataContent === 'null') {
+								continue;
+							}
+							
+							const data = JSON.parse(dataContent) as GradioEventData;
+							
+							if (data && data.error) {
 								throw new NodeOperationError(executeFunctions.getNode(), data.error);
 							}
 							
-							if (data.data !== undefined && !data.is_generating) {
+							if (data && data.data !== undefined && !data.is_generating) {
 								return data.data;
 							}
 						} catch (parseError) {
 							// Continue to next line if parse fails
 							console.error('Failed to parse data line:', line, 'Error:', parseError);
 						}
+					}
+					
+					// Check for complete event
+					if (line.startsWith('event: complete')) {
+						// The next data line should contain our result
+						continue;
 					}
 				}
 			}
