@@ -401,19 +401,39 @@ export class GradioClient implements INodeType {
 						
 						if (openApiResponse.statusCode === 200 && openApiResponse.body) {
 							const openApiSpec = openApiResponse.body;
+							console.log('OpenAPI spec loaded successfully:', openApiSpec);
 							const paths = openApiSpec.paths || {};
 							const options = [];
 							
 							for (const path in paths) {
+								const pathInfo = paths[path].post || {};
+								if (!pathInfo) continue; // Skip if no POST method
+								
+								let endpoint = path;
+								let displayName = path;
+								
+								// Handle different endpoint patterns
 								if (path.startsWith('/gradio_api/call/')) {
-									const endpoint = path.replace('/gradio_api/call', '');
-									const pathInfo = paths[path].post || {};
-									const summary = pathInfo.summary || endpoint;
-									options.push({
-										name: `${endpoint} - ${summary}`,
-										value: endpoint,
-									});
+									// Traditional Gradio API pattern
+									endpoint = path.replace('/gradio_api/call', '');
+									displayName = endpoint;
+								} else if (path.startsWith('/run/') || path.startsWith('/api/') || path.startsWith('/predict')) {
+									// Direct API endpoints (/run/, /api/, /predict)
+									endpoint = path;
+									displayName = path;
+								} else if (path.startsWith('/')) {
+									// Any other root-level endpoint
+									endpoint = path;
+									displayName = path;
+								} else {
+									continue; // Skip non-standard paths
 								}
+								
+								const summary = pathInfo.summary || pathInfo.operationId || displayName;
+								options.push({
+									name: `${displayName} - ${summary}`,
+									value: endpoint,
+								});
 							}
 							
 							if (options.length > 0) {
@@ -421,6 +441,8 @@ export class GradioClient implements INodeType {
 							}
 						}
 					} catch (openApiError) {
+						console.error('OpenAPI endpoint failed:', openApiError);
+						// If OpenAPI fails, try the config endpoint
 						// Continue to config endpoint fallback
 					}
 					
@@ -464,9 +486,12 @@ export class GradioClient implements INodeType {
 					}
 				} catch (error) {
 					// If all fails, return default options
+					console.error('Failed to load API functions:', error);
 				}
 				
 				// Default fallback
+				console.warn('Auto-detection failed, returning default options');
+				// Return default options if nothing was found
 				return [
 					{ name: '/predict (default)', value: '/predict' },
 					{ name: '/generate (common)', value: '/generate' },
