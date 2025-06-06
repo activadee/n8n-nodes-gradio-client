@@ -224,8 +224,8 @@ export class GradioClient implements INodeType {
 						operation: ['callFunction'],
 					},
 				},
-				placeholder: '["Hello world", 42, true]',
-				description: 'JSON array of parameters to pass to the function',
+				placeholder: '["Hello world", 42, true] or {"text": "Hello", "value": 42}',
+				description: 'JSON array of parameters or JSON object to pass to the function',
 			},
 			{
 				displayName: 'File Upload Options',
@@ -406,12 +406,19 @@ export class GradioClient implements INodeType {
 					const advancedOptions = this.getNodeParameter('advancedOptions', i) as IDataObject;
 					const fileOptions = this.getNodeParameter('fileOptions', i) as IDataObject;
 					
-					// Parse input parameters
+					// Parse input parameters - accept both array and object
 					let inputParameters: any[];
 					try {
-						inputParameters = JSON.parse(inputParametersRaw);
-						if (!Array.isArray(inputParameters)) {
-							throw new Error('Input parameters must be a JSON array');
+						const parsedData = JSON.parse(inputParametersRaw);
+						
+						if (Array.isArray(parsedData)) {
+							// Direct array format: [123, "www"]
+							inputParameters = parsedData;
+						} else if (typeof parsedData === 'object' && parsedData !== null) {
+							// Object format: {"p1": 123, "p2": "www"} -> [{"p1": 123, "p2": "www"}]
+							inputParameters = [parsedData];
+						} else {
+							throw new Error('Input parameters must be a JSON array or object');
 						}
 					} catch (error) {
 						throw new NodeOperationError(
