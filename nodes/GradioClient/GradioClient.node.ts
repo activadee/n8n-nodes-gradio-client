@@ -80,7 +80,7 @@ async function pollForResults(
 	
 	while ((Date.now() - startTime) < timeout * 1000) {
 		try {
-			const pollUrl = url.replace(/\/gradio_api\/call\/.*/, `/gradio_api/call/${eventId}`);
+			const pollUrl = `${url}/${eventId}`;
 			console.log('Polling GET request to:', pollUrl);
 			console.log('Polling headers:', JSON.stringify(headers));
 			
@@ -702,7 +702,7 @@ export class GradioClient implements INodeType {
 					}
 
 					// Step 2: Wait a bit for processing to start
-					await sleep(2000);
+					await sleep(5000); // Wait 5 seconds before polling
 
 					// Step 3: Poll for results
 					const resultData = await pollForResults(
