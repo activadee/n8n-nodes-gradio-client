@@ -67,85 +67,57 @@ async function convertToGradioFile(
 	};
 }
 
-async function pollForResults(
-	executeFunctions: IExecuteFunctions,
-	url: string,
-	eventId: string,
-	timeout: number,
-	headers: IDataObject,
-): Promise<any> {
-	const startTime = Date.now();
-	let pollInterval = 1000; // Start with 1 second
-	const maxPollInterval = 5000; // Max 5 seconds
-	
-	while ((Date.now() - startTime) < timeout * 1000) {
-		try {
-			const pollUrl = `${url}/${eventId}`;
-			console.log('Polling GET request to:', pollUrl);
-			console.log('Polling headers:', JSON.stringify(headers));
-			
-			const response = await executeFunctions.helpers.httpRequest({
-				method: 'GET',
-				url: pollUrl,
-				headers,
-				returnFullResponse: true,
-			});
-
-			if (response.statusCode === 200 && response.body) {
-				// Parse streaming response
-				const lines = response.body.split('\n').filter((line: string) => line.trim());
-				
-				for (const line of lines) {
-					console.log('Received line:', line);
-					// Check for data lines
-					if (line.startsWith('data: ')) {
-						try {
-							const dataContent = line.slice(6).trim();
-							
-							// Skip null data (heartbeat)
-							if (dataContent === 'null') {
-								continue;
-							}
-							
-							const data = JSON.parse(dataContent) as GradioEventData;
-							
-							if (data && data.error) {
-								throw new NodeOperationError(executeFunctions.getNode(), data.error);
-							}
-							
-							if (data && data.data !== undefined && !data.is_generating) {
-								return data.data;
-							}
-						} catch (parseError) {
-							// Continue to next line if parse fails
-							console.error('Failed to parse data line:', line, 'Error:', parseError);
-						}
-					}
-					
-					// Check for complete event
-					if (line.startsWith('event: complete')) {
-						// The next data line should contain our result
-						continue;
-					}
-				}
-			}
-		} catch (error) {
-			console.error('Polling error:', error);
-			// Continue polling on error
-		}
-		
-		await sleep(pollInterval);
-		// Exponential backoff
-		pollInterval = Math.min(pollInterval * 1.5, maxPollInterval);
-	}
-	
-	throw new NodeOperationError(
-		executeFunctions.getNode(),
-		`Timeout waiting for Gradio response after ${timeout} seconds`,
-	);
-}
 
 export class GradioClient implements INodeType {
+	
+	static parseStreamingResponse(responseBody: string): any {
+		const lines = responseBody.split('\n').filter((line: string) => line.trim());
+		let isComplete = false;
+		let resultData = null;
+		
+		for (const line of lines) {
+			console.log('Parsing line:', line);
+			
+			// Check for complete event
+			if (line.startsWith('event: complete')) {
+				isComplete = true;
+				continue;
+			}
+			
+			// Check for data lines
+			if (line.startsWith('data: ')) {
+				try {
+					const dataContent = line.slice(6).trim();
+					
+					// Skip null data (heartbeat)
+					if (dataContent === 'null') {
+						continue;
+					}
+					
+					const data = JSON.parse(dataContent);
+					
+					if (Array.isArray(data)) {
+						// Direct array data (final result)
+						resultData = data;
+						if (isComplete) {
+							return resultData;
+						}
+					} else if (data && typeof data === 'string' && data.includes('error')) {
+						throw new Error(data);
+					}
+				} catch (parseError) {
+					console.error('Failed to parse data line:', line, 'Error:', parseError);
+				}
+			}
+		}
+		
+		// If we have result data and complete event, return it
+		if (isComplete && resultData) {
+			return resultData;
+		}
+		
+		throw new Error('No valid result data found in streaming response');
+	}
 	description: INodeTypeDescription = {
 		displayName: 'Gradio Client',
 		name: 'gradioClient',
@@ -675,22 +647,24 @@ export class GradioClient implements INodeType {
 					const timeout = (advancedOptions.timeout as number) || 120;
 					const returnFullResponse = advancedOptions.returnFullResponse as boolean || false;
 
-					// Step 1: Make initial API call
+					// Single streaming request approach
 					const apiUrl = `${cleanedUrl}/gradio_api/call${apiName}`;
 					const startTime = Date.now();
 
-					console.log('Making POST request to:', apiUrl);
+					console.log('Making streaming request to:', apiUrl);
 					console.log('Headers:', JSON.stringify(headers));
 					console.log('Body:', JSON.stringify({
 						data: inputParameters,
 					}));
 
+					// Make request and get event_id
 					const initialResponse = await this.helpers.httpRequest({
 						method: 'POST',
 						url: apiUrl,
 						headers,
 						body: {
 							data: inputParameters,
+
 						},
 						returnFullResponse: true,
 					});
@@ -712,17 +686,27 @@ export class GradioClient implements INodeType {
 						);
 					}
 
-					// Step 2: Start polling immediately 
-					await sleep(100); // Minimal wait before polling
-
-					// Step 3: Poll for results
-					const resultData = await pollForResults(
-						this,
-						apiUrl,
-						eventId,
-						timeout,
+					// Single streaming request to get results
+					const streamUrl = `${apiUrl}/${eventId}`;
+					console.log('Making streaming GET request to:', streamUrl);
+					
+					const streamResponse = await this.helpers.httpRequest({
+						method: 'GET',
+						url: streamUrl,
 						headers,
-					);
+						timeout: timeout * 1000,
+						returnFullResponse: true,
+					});
+
+					if (streamResponse.statusCode !== 200) {
+						throw new NodeOperationError(
+							this.getNode(),
+							`Failed to get streaming response: ${streamResponse.statusMessage}`,
+						);
+					}
+
+					// Parse the complete streaming response
+					const resultData = GradioClient.parseStreamingResponse(streamResponse.body);
 
 					const duration = Date.now() - startTime;
 
