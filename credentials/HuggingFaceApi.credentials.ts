@@ -36,7 +36,10 @@ export class HuggingFaceApi implements ICredentialType {
 	test: ICredentialTestRequest = {
 		request: {
 			baseURL: 'https://huggingface.co',
-			url: '/api/whoami',
+			url: '/api/whoami-v2',
+			headers: {
+				Authorization: '=Bearer {{$credentials.apiKey}}',
+			},
 		},
 	};
 }
