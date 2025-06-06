@@ -417,8 +417,12 @@ export class GradioClient implements INodeType {
 									// Traditional Gradio API pattern
 									endpoint = path.replace('/gradio_api/call', '');
 									displayName = endpoint;
-								} else if (path.startsWith('/run/') || path.startsWith('/api/') || path.startsWith('/predict')) {
-									// Direct API endpoints (/run/, /api/, /predict)
+								} else if (path.startsWith('/run/')) {
+									// Extract function name from /run/ endpoints
+									endpoint = path.replace('/run', ''); // Remove /run/ prefix
+									displayName = endpoint; // Show only the function name
+								} else if (path.startsWith('/api/') || path.startsWith('/predict')) {
+									// Direct API endpoints (/api/, /predict)
 									endpoint = path;
 									displayName = path;
 								} else if (path.startsWith('/')) {
