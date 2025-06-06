@@ -96,6 +96,8 @@ async function pollForResults(
 				const lines = response.body.split('\n').filter((line: string) => line.trim());
 				
 				for (const line of lines) {
+					console.log('Received line:', line);
+					// Check for data lines
 					if (line.startsWith('data: ')) {
 						try {
 							const data = JSON.parse(line.slice(6)) as GradioEventData;
@@ -109,11 +111,13 @@ async function pollForResults(
 							}
 						} catch (parseError) {
 							// Continue to next line if parse fails
+							console.error('Failed to parse data line:', line, 'Error:', parseError);
 						}
 					}
 				}
 			}
 		} catch (error) {
+			console.error('Polling error:', error);
 			// Continue polling on error
 		}
 		
