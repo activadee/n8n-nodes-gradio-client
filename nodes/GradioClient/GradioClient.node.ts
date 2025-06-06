@@ -78,6 +78,9 @@ async function pollForResults(
 	
 	while ((Date.now() - startTime) < timeout * 1000) {
 		try {
+			console.log('Polling GET request to:', `${url}/${eventId}`);
+			console.log('Polling headers:', JSON.stringify(headers));
+			
 			const response = await executeFunctions.helpers.httpRequest({
 				method: 'GET',
 				url: `${url}/${eventId}`,
@@ -335,7 +338,17 @@ export class GradioClient implements INodeType {
 
 				if (requiresAuth) {
 					const credentials = await this.getCredentials('huggingFaceApi');
-					headers['Authorization'] = `Bearer ${credentials.apiKey}`;
+					if (!credentials || !credentials.apiKey) {
+						throw new NodeOperationError(
+							this.getNode(),
+							'HuggingFace API credentials not found or invalid',
+						);
+					}
+					const apiKey = credentials.apiKey as string;
+					console.log('HuggingFace API Key present:', !!apiKey);
+					console.log('API Key starts with:', apiKey.substring(0, 7) + '...');
+					console.log('API Key length:', apiKey.length);
+					headers['Authorization'] = `Bearer ${apiKey}`;
 				}
 
 				if (operation === 'getSpaceInfo') {
@@ -417,6 +430,13 @@ export class GradioClient implements INodeType {
 					// Step 1: Make initial API call
 					const apiUrl = `${cleanedUrl}/gradio_api/call${apiName}`;
 					const startTime = Date.now();
+
+					console.log('Making POST request to:', apiUrl);
+					console.log('Headers:', JSON.stringify(headers));
+					console.log('Body:', JSON.stringify({
+						data: inputParameters,
+						session_hash: sessionHash,
+					}));
 
 					const initialResponse = await this.helpers.httpRequest({
 						method: 'POST',
