@@ -1,0 +1,45 @@
+{
+  "name": "n8n-nodes-gradio-client",
+  "version": "0.1.0",
+  "description": "n8n node for connecting to Gradio Spaces",
+  "keywords": [
+    "n8n-community-node-package",
+    "n8n",
+    "gradio",
+    "huggingface",
+    "ai"
+  ],
+  "license": "MIT",
+  "author": {
+    "name": "Your Name",
+    "email": "your.email@example.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/n8n-nodes-gradio-client.git"
+  },
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "postbuild": "cp -r nodes/GradioClient/*.svg dist/nodes/GradioClient/",
+    "dev": "tsc --watch"
+  },
+  "files": [
+    "dist"
+  ],
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "credentials": [],
+    "nodes": [
+      "dist/nodes/GradioClient/GradioClient.node.js"
+    ]
+  },
+  "devDependencies": {
+    "@types/node": "^16.11.26",
+    "n8n-workflow": "^1.0.0",
+    "typescript": "^4.6.2"
+  },
+  "peerDependencies": {
+    "n8n-workflow": "^1.0.0"
+  }
+}
