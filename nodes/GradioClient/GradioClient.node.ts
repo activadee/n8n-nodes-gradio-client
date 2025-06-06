@@ -70,53 +70,72 @@ async function convertToGradioFile(
 
 export class GradioClient implements INodeType {
 	
-	static parseStreamingResponse(responseBody: string): any {
+	static parseServerSentEvents(responseBody: string): any {
 		const lines = responseBody.split('\n').filter((line: string) => line.trim());
-		let isComplete = false;
+		let eventType = '';
 		let resultData = null;
+		let hasCompleteEvent = false;
 		
 		for (const line of lines) {
-			console.log('Parsing line:', line);
+			console.log('Processing SSE line:', line);
 			
-			// Check for complete event
-			if (line.startsWith('event: complete')) {
-				isComplete = true;
+			// Parse event type
+			if (line.startsWith('event: ')) {
+				eventType = line.slice(7).trim();
+				console.log('Event type:', eventType);
+				
+				if (eventType === 'complete') {
+					hasCompleteEvent = true;
+				}
 				continue;
 			}
 			
-			// Check for data lines
+			// Parse data content
 			if (line.startsWith('data: ')) {
 				try {
 					const dataContent = line.slice(6).trim();
 					
 					// Skip null data (heartbeat)
 					if (dataContent === 'null') {
+						console.log('Skipping heartbeat data');
 						continue;
+					}
+					
+					// Skip error messages in data
+					if (dataContent.includes('error') && dataContent.includes('Session not found')) {
+						throw new Error(`Gradio API Error: ${dataContent}`);
 					}
 					
 					const data = JSON.parse(dataContent);
 					
-					if (Array.isArray(data)) {
-						// Direct array data (final result)
+					// Handle different event types
+					if (eventType === 'complete' && Array.isArray(data)) {
+						console.log('Found complete event with data:', data);
+						return data;
+					} else if (eventType === 'error') {
+						throw new Error(`Gradio API Error: ${JSON.stringify(data)}`);
+					} else if (Array.isArray(data) && hasCompleteEvent) {
+						// Fallback: array data after seeing complete event
+						console.log('Found array data after complete event:', data);
 						resultData = data;
-						if (isComplete) {
-							return resultData;
-						}
-					} else if (data && typeof data === 'string' && data.includes('error')) {
-						throw new Error(data);
 					}
 				} catch (parseError) {
-					console.error('Failed to parse data line:', line, 'Error:', parseError);
+					console.error('Failed to parse SSE data line:', line, 'Error:', parseError);
+					// Re-throw if it's our custom error
+					if (parseError instanceof Error && parseError.message.includes('Gradio API Error')) {
+						throw parseError;
+					}
 				}
 			}
 		}
 		
-		// If we have result data and complete event, return it
-		if (isComplete && resultData) {
+		// Return result if we found complete event and data
+		if (hasCompleteEvent && resultData) {
+			console.log('Returning result data:', resultData);
 			return resultData;
 		}
 		
-		throw new Error('No valid result data found in streaming response');
+		throw new Error('No valid result found in server-sent events stream');
 	}
 	description: INodeTypeDescription = {
 		displayName: 'Gradio Client',
@@ -642,8 +661,7 @@ export class GradioClient implements INodeType {
 						}
 					}
 
-					// Generate session hash if not provided
-					const sessionHash = (advancedOptions.sessionHash as string) || generateSessionHash();
+					// Configuration
 					const timeout = (advancedOptions.timeout as number) || 120;
 					const returnFullResponse = advancedOptions.returnFullResponse as boolean || false;
 
@@ -651,13 +669,13 @@ export class GradioClient implements INodeType {
 					const apiUrl = `${cleanedUrl}/gradio_api/call${apiName}`;
 					const startTime = Date.now();
 
-					console.log('Making streaming request to:', apiUrl);
+					console.log('Making initial API request to:', apiUrl);
 					console.log('Headers:', JSON.stringify(headers));
 					console.log('Body:', JSON.stringify({
 						data: inputParameters,
 					}));
 
-					// Make request and get event_id
+					// Make request and get event_id (following official Gradio pattern)
 					const initialResponse = await this.helpers.httpRequest({
 						method: 'POST',
 						url: apiUrl,
@@ -686,9 +704,9 @@ export class GradioClient implements INodeType {
 						);
 					}
 
-					// Single streaming request to get results
+					// Stream results using server-sent events
 					const streamUrl = `${apiUrl}/${eventId}`;
-					console.log('Making streaming GET request to:', streamUrl);
+					console.log('Streaming results from:', streamUrl);
 					
 					const streamResponse = await this.helpers.httpRequest({
 						method: 'GET',
@@ -699,14 +717,22 @@ export class GradioClient implements INodeType {
 					});
 
 					if (streamResponse.statusCode !== 200) {
-						throw new NodeOperationError(
-							this.getNode(),
-							`Failed to get streaming response: ${streamResponse.statusMessage}`,
-						);
+						let errorMessage = `HTTP ${streamResponse.statusCode}: ${streamResponse.statusMessage}`;
+						
+						// Handle specific Gradio errors
+						if (streamResponse.statusCode === 404) {
+							errorMessage = 'Gradio API endpoint not found or session expired';
+						} else if (streamResponse.statusCode === 401) {
+							errorMessage = 'Authentication failed - check your HuggingFace token';
+						} else if (streamResponse.statusCode === 429) {
+							errorMessage = 'Rate limit exceeded - consider duplicating the space';
+						}
+						
+						throw new NodeOperationError(this.getNode(), errorMessage);
 					}
 
-					// Parse the complete streaming response
-					const resultData = GradioClient.parseStreamingResponse(streamResponse.body);
+					// Parse the server-sent events response
+					const resultData = GradioClient.parseServerSentEvents(streamResponse.body);
 
 					const duration = Date.now() - startTime;
 
@@ -717,7 +743,6 @@ export class GradioClient implements INodeType {
 								success: true,
 								eventId,
 								duration,
-								sessionHash,
 							},
 							pairedItem: { item: i },
 						});
