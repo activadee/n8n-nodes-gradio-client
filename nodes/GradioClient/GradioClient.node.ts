@@ -141,7 +141,7 @@ export class GradioClient implements INodeType {
 				required: false,
 				displayOptions: {
 					show: {
-						requiresAuth: [true],
+						authentication: ['huggingface'],
 					},
 				},
 			},
@@ -168,24 +168,24 @@ export class GradioClient implements INodeType {
 			},
 			{
 				displayName: 'Authentication',
-				name: 'requiresAuth',
+				name: 'authentication',
 				type: 'options',
 				options: [
 					{
 						name: 'None',
-						value: false,
+						value: 'none',
 						description: 'Public space - no authentication needed',
 					},
 					{
 						name: 'HuggingFace API',
-						value: true,
+						value: 'huggingface',
 						description: 'Private space - requires HuggingFace authentication',
 					},
 				],
-				default: false,
+				default: 'none',
 				required: true,
 				noDataExpression: true,
-				description: 'Choose whether the space requires authentication',
+				description: 'Choose authentication method',
 			},
 			{
 				displayName: 'Space URL',
@@ -324,7 +324,8 @@ export class GradioClient implements INodeType {
 		for (let i = 0; i < items.length; i++) {
 			try {
 				const spaceUrl = this.getNodeParameter('spaceUrl', i) as string;
-				const requiresAuth = this.getNodeParameter('requiresAuth', i) as boolean;
+				const authentication = this.getNodeParameter('authentication', i) as string;
+				const requiresAuth = authentication === 'huggingface';
 				const cleanedUrl = cleanUrl(spaceUrl);
 
 				// Set up headers
