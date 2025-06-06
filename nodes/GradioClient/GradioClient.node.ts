@@ -167,6 +167,14 @@ export class GradioClient implements INodeType {
 				default: 'callFunction',
 			},
 			{
+				displayName: 'Requires Authentication',
+				name: 'requiresAuth',
+				type: 'boolean',
+				noDataExpression: true,
+				default: false,
+				description: 'Whether the space requires HuggingFace authentication',
+			},
+			{
 				displayName: 'Space URL',
 				name: 'spaceUrl',
 				type: 'string',
@@ -174,13 +182,6 @@ export class GradioClient implements INodeType {
 				required: true,
 				placeholder: 'https://username-spacename.hf.space',
 				description: 'Full URL of the Gradio Space',
-			},
-			{
-				displayName: 'Requires Authentication',
-				name: 'requiresAuth',
-				type: 'boolean',
-				default: false,
-				description: 'Whether the space requires HuggingFace authentication',
 			},
 			{
 				displayName: 'API Name',
