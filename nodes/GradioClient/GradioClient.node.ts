@@ -670,7 +670,6 @@ export class GradioClient implements INodeType {
 					console.log('Headers:', JSON.stringify(headers));
 					console.log('Body:', JSON.stringify({
 						data: inputParameters,
-						session_hash: sessionHash,
 					}));
 
 					const initialResponse = await this.helpers.httpRequest({
@@ -679,7 +678,6 @@ export class GradioClient implements INodeType {
 						headers,
 						body: {
 							data: inputParameters,
-							session_hash: sessionHash,
 						},
 						returnFullResponse: true,
 					});
