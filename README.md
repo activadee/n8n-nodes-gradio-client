@@ -7,13 +7,14 @@ A comprehensive n8n community node that enables seamless integration with Gradio
 
 ## Features
 
-- 🚀 **Universal Gradio Support**: Call any Gradio Space API function
+- 🚀 **Universal Gradio Support**: Call any Gradio Space API function with automatic endpoint discovery
 - 🔐 **HuggingFace Authentication**: Support for private spaces with API tokens
-- 📁 **File Upload Handling**: Seamless file uploads with automatic processing
-- ⏱️ **Smart Polling**: Intelligent polling with configurable timeouts for long-running operations
-- 📊 **Space Information**: Get detailed space configuration and API endpoints
-- 🛡️ **Error Handling**: Comprehensive error handling with detailed error types
-- 🔄 **Retry Logic**: Built-in retry mechanisms for robust API interactions
+- 📁 **File Upload Handling**: Seamless file uploads with automatic processing and metadata handling
+- ⚡ **Real-time Streaming**: Server-Sent Events (SSE) support for live AI model responses
+- 📊 **Smart API Discovery**: Automatic endpoint detection via OpenAPI specification with config fallback
+- 🛡️ **Comprehensive Error Handling**: Detailed error types with HTTP status mapping and recovery suggestions
+- 🔄 **Adaptive Retry Logic**: Exponential backoff retry mechanisms for robust API interactions
+- 🎯 **Production Ready**: Debug mode, configurable timeouts, and session management
 
 ## Installation
 
