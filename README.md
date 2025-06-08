@@ -235,14 +235,6 @@ chore: maintenance tasks
 - Check if the space is public and accessible
 - Verify the API name format (should start with `/`)
 
-
-## Workflow Testing
-
-This version includes optimized semantic-release workflow for squash merges:
-- Feature branches → beta via squash merge
-- Beta → main via squash merge  
-- Automated version management
-
 ## Support
 
 - 🐛 **Bug Reports**: [GitHub Issues](https://github.com/activadee/n8n-nodes-gradio-client/issues)
