@@ -25,6 +25,5 @@ module.exports = {
         "title": "Automatic merge failure",
       }
     ],
-    "@semantic-release/exec",
   ],
 };
