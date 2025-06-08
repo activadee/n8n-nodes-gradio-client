@@ -15,5 +15,16 @@ module.exports = {
         message: 'chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}',
       },
     ],
+     [
+      "@kilianpaquier/semantic-release-backmerge",
+      {
+        "commit": "chore(release): merge branch ${ from } into ${ to } [skip ci]",
+        "targets": [
+          { "from": "main", "to": "next" }
+        ],
+        "title": "Automatic merge failure",
+      }
+    ],
+    "@semantic-release/exec",
   ],
 };
